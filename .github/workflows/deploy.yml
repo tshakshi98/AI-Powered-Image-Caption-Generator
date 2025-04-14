@@ -1,4 +1,4 @@
-name: Deploy to AWS
+name: Deploy to AWS Elastic Beanstalk
 
 on:
   push:
@@ -10,9 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # Step 1: Checkout Code
     - name: Checkout Code
       uses: actions/checkout@v3
 
+    # Step 2: Set up AWS CLI
     - name: Set up AWS CLI
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -20,15 +22,15 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ap-south-1
 
+    # Step 3: Create IAM Roles and Instance Profile
     - name: Create IAM Roles and Instance Profile
       run: |
-        # Check if instance profile exists, create if it doesn't
         INSTANCE_PROFILE_NAME="aws-elasticbeanstalk-ec2-role"
 
-        # Create Role if not existing
+        # Check if instance profile exists
         if ! aws iam get-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME" 2>/dev/null; then
           echo "Creating instance profile and role..."
-          
+
           # Create Role
           aws iam create-role --role-name "$INSTANCE_PROFILE_NAME" \
             --assume-role-policy-document '{
@@ -43,64 +45,70 @@ jobs:
                 }
               ]
             }'
-          
-          # Attach Elastic Beanstalk policies
+
+          # Attach Policies
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier"
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier"
-          
+
           # Create Instance Profile
           aws iam create-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME"
           aws iam add-role-to-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME" --role-name "$INSTANCE_PROFILE_NAME"
         fi
 
+    # Step 4: Create S3 Bucket
     - name: Create S3 bucket if it doesn't exist
       run: |
-        # Check if bucket exists, create if it doesn't
-        if ! aws s3api head-bucket --bucket image-caption-app-bucket 2>/dev/null; then
-          aws s3 mb s3://image-caption-app-bucket --region ap-south-1
+        BUCKET_NAME="image-caption-app-bucket"
+        if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
+          echo "Creating S3 bucket: $BUCKET_NAME"
+          aws s3 mb s3://$BUCKET_NAME --region ap-south-1
         fi
 
+    # Step 5: Deploy to Elastic Beanstalk
     - name: Deploy Application to Elastic Beanstalk
       run: |
-        # Hardcode a known solution stack name that exists
+        # Solution Stack
         SOLUTION_STACK="64bit Amazon Linux 2023 v4.5.0 running Python 3.11"
-        echo "Using solution stack: $SOLUTION_STACK"
-        
-        # Create zip file
+
+        # Zip Application
+        echo "Zipping application files..."
         zip -r app.zip .
-        
-        # Upload zip to S3
-        aws s3 cp app.zip s3://image-caption-app-bucket/app.zip
-        
-        # Check if application exists, create if it doesn't
+
+        # Upload to S3
+        echo "Uploading application to S3..."
+        aws s3 cp app.zip s3://$BUCKET_NAME/app.zip
+
+        # Create Application if it doesn't exist
         if ! aws elasticbeanstalk describe-applications --application-names "ImageCaptionApp" 2>/dev/null | grep -q "ImageCaptionApp"; then
+          echo "Creating Elastic Beanstalk application..."
           aws elasticbeanstalk create-application --application-name "ImageCaptionApp"
         fi
-        
-        # Create a unique version label
-        VERSION="v1-$(date +%s)"
-        
-        # Create new application version
+
+        # Create Version Label
+        VERSION_LABEL="v1-$(date +%s)"
+        echo "Version label: $VERSION_LABEL"
+
+        # Create New Application Version
         aws elasticbeanstalk create-application-version \
           --application-name "ImageCaptionApp" \
-          --version-label "$VERSION" \
-          --source-bundle S3Bucket=image-caption-app-bucket,S3Key=app.zip
-        
-        # Check if environment exists
-        ENV_CHECK=$(aws elasticbeanstalk describe-environments --application-name "ImageCaptionApp" --environment-names "ImageCaptionEnv" --query "length(Environments)" --output text)
-        
-        if [ "$ENV_CHECK" = "0" ]; then
-          echo "Creating new environment..."
+          --version-label "$VERSION_LABEL" \
+          --source-bundle S3Bucket=$BUCKET_NAME,S3Key=app.zip
+
+        # Check Environment Status
+        ENV_STATUS=$(aws elasticbeanstalk describe-environments --application-name "ImageCaptionApp" --environment-names "AIImageCaptionEnv" --query "length(Environments)" --output text)
+
+        if [ "$ENV_STATUS" = "0" ]; then
+          echo "Creating new Elastic Beanstalk environment..."
           aws elasticbeanstalk create-environment \
             --application-name "ImageCaptionApp" \
-            --environment-name "ImageCaptionEnv" \
+            --environment-name "AIImageCaptionEnv" \
             --solution-stack-name "$SOLUTION_STACK" \
-            --version-label "$VERSION" \
+            --version-label "$VERSION_LABEL" \
             --option-settings Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value="$INSTANCE_PROFILE_NAME"
         else
-          echo "Updating existing environment..."
+          echo "Updating existing Elastic Beanstalk environment..."
           aws elasticbeanstalk update-environment \
             --application-name "ImageCaptionApp" \
-            --environment-name "ImageCaptionEnv" \
-            --version-label "$VERSION"
+            --environment-name "AIImageCaptionEnv" \
+            --version-label "$VERSION_LABEL"
         fi
