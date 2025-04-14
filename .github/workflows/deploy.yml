@@ -98,11 +98,11 @@ jobs:
           --version-label "$VERSION_LABEL" \
           --source-bundle S3Bucket=$BUCKET_NAME,S3Key=app.zip
 
-        # Check Environment Status
-        ENV_STATUS=$(aws elasticbeanstalk describe-environments --application-name "ImageCaptionApp" --environment-names "AIImageCaptionEnv" --query "length(Environments)" --output text)
+        # Check if environment exists
+        ENV_CHECK=$(aws elasticbeanstalk describe-environments --application-name "ImageCaptionApp" --environment-names "AIImageCaptionEnv" --query "Environments[?Status!='Terminated'] | length(@)" --output text)
 
-        if [ "$ENV_STATUS" = "0" ]; then
-          echo "Creating new Elastic Beanstalk environment..."
+        if [ "$ENV_CHECK" = "0" ]; then
+          echo "Environment does not exist. Creating new Elastic Beanstalk environment..."
           aws elasticbeanstalk create-environment \
             --application-name "ImageCaptionApp" \
             --environment-name "AIImageCaptionEnv" \
@@ -110,7 +110,7 @@ jobs:
             --version-label "$VERSION_LABEL" \
             --option-settings Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value="$INSTANCE_PROFILE_NAME"
         else
-          echo "Updating existing Elastic Beanstalk environment..."
+          echo "Environment exists. Updating existing Elastic Beanstalk environment..."
           aws elasticbeanstalk update-environment \
             --application-name "ImageCaptionApp" \
             --environment-name "AIImageCaptionEnv" \
