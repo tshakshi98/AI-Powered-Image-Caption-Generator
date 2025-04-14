@@ -70,12 +70,15 @@ jobs:
         # Solution Stack
         SOLUTION_STACK="64bit Amazon Linux 2023 v4.5.0 running Python 3.11"
 
+        # Ensure BUCKET_NAME is properly set before using it
+        BUCKET_NAME="image-caption-app-bucket"
+
         # Zip Application
         echo "Zipping application files..."
         zip -r app.zip .
 
         # Upload to S3
-        echo "Uploading application to S3..."
+        echo "Uploading application to S3 bucket: $BUCKET_NAME..."
         aws s3 cp app.zip s3://$BUCKET_NAME/app.zip
 
         # Create Application if it doesn't exist
