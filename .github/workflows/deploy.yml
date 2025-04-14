@@ -25,13 +25,22 @@ jobs:
         fi
     
     - name: Get available solution stacks
+      id: get-stacks
       run: |
-        aws elasticbeanstalk list-available-solution-stacks --query "SolutionStacks[?contains(@, 'Python')]" > python_stacks.txt
-        cat python_stacks.txt
+        # Get first available Python solution stack
+        LATEST_PYTHON_STACK=$(aws elasticbeanstalk list-available-solution-stacks --query "SolutionStacks[?contains(@, 'Python')]" --output text | head -n 1)
+        echo "Using solution stack: $LATEST_PYTHON_STACK"
+        echo "stack=$LATEST_PYTHON_STACK" >> $GITHUB_OUTPUT
         
     - name: Deploy Application to Elastic Beanstalk
+      env:
+        SOLUTION_STACK: ${{ steps.get-stacks.outputs.stack }}
       run: |
+        echo "Selected solution stack: $SOLUTION_STACK"
+        
+        # Create zip file
         zip -r app.zip .
+        
         # Upload zip to S3
         aws s3 cp app.zip s3://image-caption-app-bucket/app.zip
         
@@ -40,28 +49,27 @@ jobs:
           aws elasticbeanstalk create-application --application-name "ImageCaptionApp"
         fi
         
+        # Create a unique version label
+        VERSION="v1-$(date +%s)"
+        
         # Create new application version
         aws elasticbeanstalk create-application-version \
           --application-name "ImageCaptionApp" \
-          --version-label "v1-$(date +%s)" \
+          --version-label "$VERSION" \
           --source-bundle S3Bucket=image-caption-app-bucket,S3Key=app.zip
         
-        # Get latest Python platform
-        LATEST_PYTHON_STACK=$(aws elasticbeanstalk list-available-solution-stacks --query "SolutionStacks[?contains(@, 'Python')]" --output text | head -1)
-        echo "Using solution stack: $LATEST_PYTHON_STACK"
-        
         # Check if environment exists
-        if ! aws elasticbeanstalk describe-environments --environment-names "ImageCaptionEnv" 2>/dev/null | grep -q "ImageCaptionEnv"; then
+        if ! aws elasticbeanstalk describe-environments --application-name "ImageCaptionApp" --environment-names "ImageCaptionEnv" 2>/dev/null | grep -q "ImageCaptionEnv"; then
           # Create environment if it doesn't exist
           aws elasticbeanstalk create-environment \
             --application-name "ImageCaptionApp" \
             --environment-name "ImageCaptionEnv" \
-            --solution-stack-name "$LATEST_PYTHON_STACK" \
-            --version-label "v1-$(date +%s)"
+            --solution-stack-name "$SOLUTION_STACK" \
+            --version-label "$VERSION"
         else
           # Update environment if it exists
           aws elasticbeanstalk update-environment \
             --application-name "ImageCaptionApp" \
             --environment-name "ImageCaptionEnv" \
-            --version-label "v1-$(date +%s)"
+            --version-label "$VERSION"
         fi
