@@ -17,14 +17,42 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ap-south-1
         
+    - name: Create S3 bucket if it doesn't exist
+      run: |
+        # Check if bucket exists, create if it doesn't
+        if ! aws s3api head-bucket --bucket image-caption-app-bucket 2>/dev/null; then
+          aws s3 mb s3://image-caption-app-bucket --region ap-south-1
+        fi
+        
     - name: Deploy Application to Elastic Beanstalk
       run: |
         zip -r app.zip .
+        # Upload zip to S3
+        aws s3 cp app.zip s3://image-caption-app-bucket/app.zip
+        
+        # Check if application exists, create if it doesn't
+        if ! aws elasticbeanstalk describe-applications --application-names "ImageCaptionApp" 2>/dev/null | grep -q "ImageCaptionApp"; then
+          aws elasticbeanstalk create-application --application-name "ImageCaptionApp"
+        fi
+        
+        # Create new application version
         aws elasticbeanstalk create-application-version \
           --application-name "ImageCaptionApp" \
-          --version-label "v1" \
-          --source-bundle S3Bucket=my-bucket,S3Key=app.zip
-        aws elasticbeanstalk update-environment \
-          --application-name "ImageCaptionApp" \
-          --environment-name "ImageCaptionEnv" \
-          --version-label "v1"
+          --version-label "v1-$(date +%s)" \
+          --source-bundle S3Bucket=image-caption-app-bucket,S3Key=app.zip
+        
+        # Check if environment exists
+        if ! aws elasticbeanstalk describe-environments --environment-names "ImageCaptionEnv" 2>/dev/null | grep -q "ImageCaptionEnv"; then
+          # Create environment if it doesn't exist
+          aws elasticbeanstalk create-environment \
+            --application-name "ImageCaptionApp" \
+            --environment-name "ImageCaptionEnv" \
+            --solution-stack-name "64bit Amazon Linux 2 v3.5.8 running Python 3.8" \
+            --version-label "v1-$(date +%s)"
+        else
+          # Update environment if it exists
+          aws elasticbeanstalk update-environment \
+            --application-name "ImageCaptionApp" \
+            --environment-name "ImageCaptionEnv" \
+            --version-label "v1-$(date +%s)"
+        fi
