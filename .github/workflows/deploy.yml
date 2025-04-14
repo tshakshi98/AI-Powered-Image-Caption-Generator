@@ -1,29 +1,65 @@
 name: Deploy to AWS
+
 on:
   push:
     branches:
       - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout Code
       uses: actions/checkout@v3
-      
+
     - name: Set up AWS CLI
       uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ap-south-1
-        
+
+    - name: Create IAM Roles and Instance Profile
+      run: |
+        # Check if instance profile exists, create if it doesn't
+        INSTANCE_PROFILE_NAME="aws-elasticbeanstalk-ec2-role"
+
+        # Create Role if not existing
+        if ! aws iam get-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME" 2>/dev/null; then
+          echo "Creating instance profile and role..."
+          
+          # Create Role
+          aws iam create-role --role-name "$INSTANCE_PROFILE_NAME" \
+            --assume-role-policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "ec2.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+                }
+              ]
+            }'
+          
+          # Attach Elastic Beanstalk policies
+          aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier"
+          aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier"
+          
+          # Create Instance Profile
+          aws iam create-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME"
+          aws iam add-role-to-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME" --role-name "$INSTANCE_PROFILE_NAME"
+        fi
+
     - name: Create S3 bucket if it doesn't exist
       run: |
         # Check if bucket exists, create if it doesn't
         if ! aws s3api head-bucket --bucket image-caption-app-bucket 2>/dev/null; then
           aws s3 mb s3://image-caption-app-bucket --region ap-south-1
         fi
-    
+
     - name: Deploy Application to Elastic Beanstalk
       run: |
         # Hardcode a known solution stack name that exists
@@ -59,7 +95,8 @@ jobs:
             --application-name "ImageCaptionApp" \
             --environment-name "ImageCaptionEnv" \
             --solution-stack-name "$SOLUTION_STACK" \
-            --version-label "$VERSION"
+            --version-label "$VERSION" \
+            --option-settings Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value="$INSTANCE_PROFILE_NAME"
         else
           echo "Updating existing environment..."
           aws elasticbeanstalk update-environment \
