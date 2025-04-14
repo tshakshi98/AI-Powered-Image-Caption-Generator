@@ -49,6 +49,7 @@ jobs:
           # Attach Policies
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier"
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier"
+          aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 
           # Create Instance Profile
           aws iam create-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME"
