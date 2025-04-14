@@ -1,0 +1,33 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up AWS CLI
+      uses: aws-actions/configure-aws-cli@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+
+    - name: Deploy Application to Elastic Beanstalk
+      run: |
+        zip -r app.zip .
+        aws elasticbeanstalk create-application-version \
+          --application-name "ImageCaptionApp" \
+          --version-label "v1" \
+          --source-bundle S3Bucket=my-bucket,S3Key=app.zip
+        aws elasticbeanstalk update-environment \
+          --application-name "ImageCaptionApp" \
+          --environment-name "ImageCaptionEnv" \
+          --version-label "v1"
