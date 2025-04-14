@@ -22,8 +22,8 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ap-south-1
 
-    # Step 3: Create IAM Roles and Instance Profile
-    - name: Create IAM Roles and Instance Profile
+    # Step 3: Ensure IAM Roles and Instance Profile Exists
+    - name: Ensure IAM Roles and Instance Profile
       run: |
         INSTANCE_PROFILE_NAME="aws-elasticbeanstalk-ec2-role"
 
@@ -31,7 +31,7 @@ jobs:
         if ! aws iam get-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME" 2>/dev/null; then
           echo "Creating instance profile and role..."
 
-          # Create Role
+          # Create IAM role
           aws iam create-role --role-name "$INSTANCE_PROFILE_NAME" \
             --assume-role-policy-document '{
               "Version": "2012-10-17",
@@ -46,14 +46,16 @@ jobs:
               ]
             }'
 
-          # Attach Policies
+          # Attach required policies
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier"
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AWSElasticBeanstalkWorkerTier"
           aws iam attach-role-policy --role-name "$INSTANCE_PROFILE_NAME" --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 
-          # Create Instance Profile
+          # Create and associate the instance profile
           aws iam create-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME"
           aws iam add-role-to-instance-profile --instance-profile-name "$INSTANCE_PROFILE_NAME" --role-name "$INSTANCE_PROFILE_NAME"
+        else
+          echo "Instance profile $INSTANCE_PROFILE_NAME already exists."
         fi
 
     # Step 4: Create S3 Bucket
@@ -70,6 +72,9 @@ jobs:
       run: |
         # Solution Stack
         SOLUTION_STACK="64bit Amazon Linux 2023 v4.5.0 running Python 3.11"
+        
+        # Instance Profile
+        INSTANCE_PROFILE_NAME="aws-elasticbeanstalk-ec2-role"
 
         # Ensure BUCKET_NAME is properly set before using it
         BUCKET_NAME="image-caption-app-bucket"
